@@ -1,0 +1,33 @@
+WHITESPACE = _{ " " | NEWLINE }
+COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
+
+keyword = { "fn" }
+
+identifier_char = @{ ASCII_ALPHANUMERIC | "_" }
+identifier = @{ !keyword ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")+ }
+
+program = {
+    SOI
+    ~ program_entry
+    ~ (";" ~ program_entry)* ~ ";"?
+    ~ EOI
+}
+
+program_entry = { rule }
+
+rule = { rule_lhs ~ "=" ~ rule_clauses }
+
+rule_lhs = {
+    identifier ~ "(" ~ (
+        ")"
+        | identifier ~ ("," ~ identifier)* ~ ")"
+    )
+}
+
+rule_clauses = { rule_clause ~ ("," ~ rule_clause)* }
+rule_clause = {
+    src_clause
+}
+
+src_clause = { identifier ~ "(" ~ (")" | src_clause_params ~ ")")  }
+src_clause_params = { identifier ~ ("," ~ identifier)* }

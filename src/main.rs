@@ -1,3 +1,12 @@
+mod ast;
+mod parser;
+
 fn main() {
-    println!("Hello, world!");
+    let program = parser::parse(
+        "
+        q(x) = cities(name);
+        ",
+    )
+    .unwrap();
+    dbg!(program);
 }
