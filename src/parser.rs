@@ -4,7 +4,10 @@ use anyhow::{Context, Result};
 use pest::Parser as _;
 use pest_derive::Parser;
 
-use crate::ast::{Clause, ColumnProjection, Identifier, Program, Rule as QueryRule, SourceClause};
+use crate::ast::{
+    Clause, ColumnProjection, ConditionClause, Identifier, Literal, Program, Rule as QueryRule,
+    SourceClause,
+};
 
 #[derive(Parser)]
 #[grammar = "ruql.pest"]
@@ -43,6 +46,14 @@ fn expect_identifier<'a, P: BorrowMut<Pairs<'a>>>(pairs: P) -> Identifier {
     convert_identifier(expect_next_rule(pairs, Rule::identifier))
 }
 
+impl From<Pair<'_>> for Literal {
+    fn from(pair: Pair<'_>) -> Self {
+        assert_eq!(pair.as_rule(), Rule::string_literal);
+        let interior = expect_next_rule(pair.into_inner(), Rule::string_interior);
+        Self(interior.as_str().to_string())
+    }
+}
+
 impl From<Pair<'_>> for QueryRule {
     fn from(pair: Pair<'_>) -> Self {
         let rule_pair = expect_next_rule(pair.into_inner(), Rule::rule);
@@ -71,6 +82,8 @@ impl From<Pair<'_>> for Clause {
         match pair.as_rule() {
             Rule::src_clause => Clause::Source(SourceClause::from(pair)),
 
+            Rule::condition_clause => Clause::Condition(ConditionClause::from(pair)),
+
             _ => unreachable!(),
         }
     }
@@ -94,5 +107,14 @@ impl From<Pair<'_>> for SourceClause {
             .collect();
 
         Self { name, projection }
+    }
+}
+
+impl From<Pair<'_>> for ConditionClause {
+    fn from(pair: Pair<'_>) -> Self {
+        let mut pairs = pair.into_inner();
+        let lhs = expect_identifier(&mut pairs);
+        let rhs = Literal::from(pairs.next().unwrap());
+        Self { lhs, rhs }
     }
 }

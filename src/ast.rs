@@ -3,6 +3,9 @@ pub type RuleName = Identifier;
 pub type ColumnName = Identifier;
 
 #[derive(Clone, Debug)]
+pub struct Literal(pub String);
+
+#[derive(Clone, Debug)]
 pub struct Program {
     pub rules: Vec<Rule>,
 }
@@ -17,6 +20,7 @@ pub struct Rule {
 #[derive(Clone, Debug)]
 pub enum Clause {
     Source(SourceClause),
+    Condition(ConditionClause),
 }
 
 #[derive(Clone, Debug)]
@@ -29,4 +33,10 @@ pub struct SourceClause {
 pub struct ColumnProjection {
     pub src: ColumnName,
     pub dst: ColumnName,
+}
+
+#[derive(Clone, Debug)]
+pub struct ConditionClause {
+    pub lhs: ColumnName,
+    pub rhs: Literal,
 }

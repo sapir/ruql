@@ -6,6 +6,9 @@ keyword = { "fn" }
 identifier_char = @{ ASCII_ALPHANUMERIC | "_" }
 identifier = @{ !keyword ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")+ }
 
+string_literal = ${ "\"" ~ string_interior ~ "\"" }
+string_interior = @{ (!"\"" ~ ANY)* }
+
 program = {
     SOI
     ~ program_entry
@@ -27,7 +30,11 @@ rule_lhs = {
 rule_clauses = { rule_clause ~ ("," ~ rule_clause)* }
 rule_clause = {
     src_clause
+    | condition_clause
 }
 
 src_clause = { identifier ~ "(" ~ (")" | src_clause_params ~ ")")  }
 src_clause_params = { identifier ~ ("," ~ identifier)* }
+
+// TODO: This is just a placeholder
+condition_clause = { identifier ~ "=" ~ string_literal }

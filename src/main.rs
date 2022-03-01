@@ -4,7 +4,7 @@ mod parser;
 fn main() {
     let program = parser::parse(
         "
-        q(x) = cities(name);
+        q(name) = cities(name, country), country = \"Israel\";
         ",
     )
     .unwrap();
