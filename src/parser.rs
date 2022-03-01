@@ -5,8 +5,8 @@ use pest::Parser as _;
 use pest_derive::Parser;
 
 use crate::ast::{
-    Clause, ColumnProjection, ConditionClause, Identifier, Literal, Program, Rule as QueryRule,
-    SourceClause,
+    Clause, ColumnName, ColumnProjection, ConditionClause, DataEntry, Identifier, Literal, Program,
+    Rule as QueryRule, RuleName, SourceClause,
 };
 
 #[derive(Parser)]
@@ -22,12 +22,37 @@ pub fn parse(code: &str) -> Result<Program> {
         .next()
         .unwrap();
 
+    let mut data_entries = vec![];
+    let mut rules = vec![];
+
+    for pair in program.into_inner() {
+        match pair.as_rule() {
+            Rule::program_entry => {
+                let pair = pair.into_inner().next().unwrap();
+                match pair.as_rule() {
+                    Rule::data_entry => {
+                        data_entries.push(pair.into());
+                    }
+
+                    Rule::rule => {
+                        rules.push(pair.into());
+                    }
+
+                    _ => unreachable!(),
+                }
+            }
+
+            Rule::EOI => {
+                break;
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
     Ok(Program {
-        rules: program
-            .into_inner()
-            .take_while(|pair| pair.as_rule() != Rule::EOI)
-            .map(QueryRule::from)
-            .collect(),
+        data_entries,
+        rules,
     })
 }
 
@@ -54,15 +79,46 @@ impl From<Pair<'_>> for Literal {
     }
 }
 
+struct RuleLhs {
+    name: RuleName,
+    columns: Vec<ColumnName>,
+}
+
+impl From<Pair<'_>> for RuleLhs {
+    fn from(pair: Pair<'_>) -> Self {
+        assert_eq!(pair.as_rule(), Rule::rule_lhs);
+        let mut pairs = pair.into_inner();
+        let name = expect_identifier(&mut pairs);
+        let columns = pairs.map(convert_identifier).collect();
+        Self { name, columns }
+    }
+}
+
+impl From<Pair<'_>> for DataEntry {
+    fn from(pair: Pair<'_>) -> Self {
+        let mut pairs = pair.into_inner();
+        let RuleLhs { name, columns } = pairs.next().unwrap().into();
+        let rhs = expect_next_rule(pairs, Rule::data_rhs);
+        let tuples = rhs
+            .into_inner()
+            .map(|pair| {
+                assert_eq!(pair.as_rule(), Rule::data_tuple);
+                pair.into_inner().map(Literal::from).collect()
+            })
+            .collect();
+        Self {
+            name,
+            columns,
+            tuples,
+        }
+    }
+}
+
 impl From<Pair<'_>> for QueryRule {
     fn from(pair: Pair<'_>) -> Self {
-        let rule_pair = expect_next_rule(pair.into_inner(), Rule::rule);
-        let mut pairs = rule_pair.into_inner();
+        let mut pairs = pair.into_inner();
 
-        let lhs = expect_next_rule(&mut pairs, Rule::rule_lhs);
-        let mut lhs_pairs = lhs.into_inner();
-        let name = expect_identifier(&mut lhs_pairs);
-        let columns = lhs_pairs.map(convert_identifier).collect();
+        let RuleLhs { name, columns } = pairs.next().unwrap().into();
 
         let clauses = expect_next_rule(&mut pairs, Rule::rule_clauses);
         let clauses = clauses.into_inner().map(Clause::from).collect();

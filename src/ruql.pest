@@ -16,7 +16,10 @@ program = {
     ~ EOI
 }
 
-program_entry = { rule }
+program_entry = {
+    data_entry
+    | rule
+}
 
 rule = { rule_lhs ~ "=" ~ rule_clauses }
 
@@ -38,3 +41,8 @@ src_clause_params = { identifier ~ ("," ~ identifier)* }
 
 // TODO: This is just a placeholder
 condition_clause = { identifier ~ "=" ~ string_literal }
+
+data_entry = { "data" ~ rule_lhs ~ "=" ~ data_rhs }
+
+data_rhs = { data_tuple ~ ("," ~ data_tuple)* }
+data_tuple = { "(" ~ string_literal ~ ("," ~ string_literal)* ~ ")" }

@@ -7,7 +7,15 @@ pub struct Literal(pub String);
 
 #[derive(Clone, Debug)]
 pub struct Program {
+    pub data_entries: Vec<DataEntry>,
     pub rules: Vec<Rule>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DataEntry {
+    pub name: RuleName,
+    pub columns: Vec<ColumnName>,
+    pub tuples: Vec<Vec<Literal>>,
 }
 
 #[derive(Clone, Debug)]
