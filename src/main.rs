@@ -1,4 +1,6 @@
-use anyhow::Result;
+use std::path::PathBuf;
+
+use anyhow::{Context, Result};
 // TODO: separate the lib to its own crate so that rustyline isn't required as a
 // dependency
 use rustyline::{error::ReadlineError, Editor};
@@ -8,29 +10,60 @@ use ruql::{
     parser::{parse_repl_stmt, ReplStmt},
     Prelude,
 };
+use structopt::StructOpt;
 
 const PRELUDE_FILENAME: &str = "prelude.ruql";
 
-fn handle_input(prelude: &mut Prelude, code: &str) -> Result<()> {
+fn handle_input(prelude: &mut Prelude, database: &rusqlite::Connection, code: &str) -> Result<()> {
     match parse_repl_stmt(code)? {
         ReplStmt::DataEntry(data_entry) => {
-            prelude.add_data_entry(data_entry)?;
+            prelude
+                .add_data_entry(data_entry)
+                .context("Adding data entry")?;
         }
 
         ReplStmt::Rule(rule) => {
-            prelude.add_rule(rule)?;
+            prelude.add_rule(rule).context("Adding rule")?;
         }
 
         ReplStmt::Query(query) => {
-            let query = prelude.compile(query)?;
-            println!("{}", query.to_sql());
+            let query = prelude.compile(query).context("Compiling query to SQL")?;
+            let sql = query.to_sql();
+
+            let mut stmt = database
+                .prepare_cached(&sql)
+                .context("Preparing SQL for execution")?;
+            let column_count = stmt.column_count();
+            let mut rows = stmt.query([]).context("Executing query")?;
+            while let Some(row) = rows.next().context("Retrieving row")? {
+                println!(
+                    "{}",
+                    (0..column_count)
+                        .map(|idx| row.get(idx))
+                        .collect::<Result<Vec<String>, _>>()?
+                        .join(",")
+                );
+            }
         }
     }
 
     Ok(())
 }
 
+#[derive(StructOpt)]
+struct Opts {
+    database: Option<PathBuf>,
+}
+
 fn main() -> Result<()> {
+    let opts = Opts::from_args();
+
+    let database = if let Some(path) = opts.database {
+        rusqlite::Connection::open(path)?
+    } else {
+        rusqlite::Connection::open_in_memory()?
+    };
+
     // TODO: completer
     let mut editor = Editor::<()>::new();
     let mut prelude = if let Ok(code) = std::fs::read_to_string(PRELUDE_FILENAME) {
@@ -54,10 +87,10 @@ fn main() -> Result<()> {
                     let input = std::mem::take(&mut input);
                     editor.add_history_entry(input.trim());
 
-                    match handle_input(&mut prelude, &input) {
+                    match handle_input(&mut prelude, &database, &input) {
                         Ok(()) => {}
                         Err(e) => {
-                            println!("Error: {}", e);
+                            println!("Error: {:?}", e);
                         }
                     }
                 }
