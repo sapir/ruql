@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
+use rusqlite::types::ValueRef;
 // TODO: separate the lib to its own crate so that rustyline isn't required as a
 // dependency
 use rustyline::{error::ReadlineError, Editor};
@@ -39,7 +40,15 @@ fn handle_input(prelude: &mut Prelude, database: &rusqlite::Connection, code: &s
                 println!(
                     "{}",
                     (0..column_count)
-                        .map(|idx| row.get(idx))
+                        .map(|idx| {
+                            Ok(match row.get_ref(idx)? {
+                                ValueRef::Null => "NULL".to_string(),
+                                ValueRef::Integer(x) => x.to_string(),
+                                ValueRef::Real(x) => x.to_string(),
+                                ValueRef::Text(x) => String::from_utf8_lossy(x).into_owned(),
+                                ValueRef::Blob(_) => bail!("Blobs not supported"),
+                            })
+                        })
                         .collect::<Result<Vec<String>, _>>()?
                         .join(",")
                 );
