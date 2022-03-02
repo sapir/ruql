@@ -1,13 +1,13 @@
 use anyhow::Result;
 
-use crate::ast::{Clause, ColumnProjection, SourceClause};
+use crate::parser::{parse_program, parse_query};
 
 mod ast;
 mod compiler;
 mod parser;
 
 fn main() -> Result<()> {
-    let program = parser::parse(
+    let program = parse_program(
         "
         data cities(name, country) =
             (\"Jerusalem\", \"Israel\"),
@@ -17,22 +17,12 @@ fn main() -> Result<()> {
 
         israeli_cities(name) = cities(name, country), country = \"Israel\";
         ",
-    )
-    .unwrap();
+    )?;
 
     let prelude = compiler::Prelude::from(program);
 
-    // TODO: parser
-    let query = vec![Clause::Source(SourceClause {
-        name: "israeli_cities".to_owned(),
-        projection: vec![ColumnProjection {
-            src: "name".to_owned(),
-            dst: "name".to_owned(),
-        }],
-    })];
-
+    let query = parse_query("israeli_cities(name);")?;
     let query = prelude.compile(query)?;
-
     println!("{}", query.to_sql());
 
     Ok(())

@@ -16,7 +16,7 @@ struct Parser;
 type Pair<'a> = pest::iterators::Pair<'a, Rule>;
 type Pairs<'a> = pest::iterators::Pairs<'a, Rule>;
 
-pub fn parse(code: &str) -> Result<Program> {
+pub fn parse_program(code: &str) -> Result<Program> {
     let program = Parser::parse(Rule::program, code)
         .context("Failed to parse input")?
         .next()
@@ -54,6 +54,15 @@ pub fn parse(code: &str) -> Result<Program> {
         data_entries,
         rules,
     })
+}
+
+pub fn parse_query(code: &str) -> Result<Vec<Clause>> {
+    let pair = Parser::parse(Rule::rule_clauses, code)
+        .context("Failed to parse input")?
+        .next()
+        .unwrap();
+
+    Ok(pair.into_inner().map(Clause::from).collect())
 }
 
 fn expect_next_rule<'a, P: BorrowMut<Pairs<'a>>>(mut pairs: P, rule: Rule) -> Pair<'a> {
