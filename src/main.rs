@@ -76,21 +76,32 @@ fn main() -> Result<()> {
     // TODO: save/restore readline history
     let mut input = String::new();
     loop {
-        let readline = editor.readline(if input.is_empty() { "ruql> " } else { " ...> " });
+        let readline = editor.readline(if input.trim().is_empty() {
+            "ruql> "
+        } else {
+            " ...> "
+        });
 
         match readline {
             Ok(line) => {
                 input.push_str(line.trim());
                 input.push('\n');
-                if input.contains(';') {
-                    // TODO: split by ';'
+                if input.trim_end().ends_with(';') {
                     let input = std::mem::take(&mut input);
+
                     editor.add_history_entry(input.trim());
 
-                    match handle_input(&mut prelude, &database, &input) {
-                        Ok(()) => {}
-                        Err(e) => {
-                            println!("Error: {:?}", e);
+                    for input_part in input.split_inclusive(';') {
+                        let input_part = input_part.trim();
+                        if input_part.is_empty() {
+                            continue;
+                        }
+
+                        match handle_input(&mut prelude, &database, &input_part) {
+                            Ok(()) => {}
+                            Err(e) => {
+                                println!("Error: {:?}", e);
+                            }
                         }
                     }
                 }
