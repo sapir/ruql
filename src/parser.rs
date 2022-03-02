@@ -16,11 +16,15 @@ struct Parser;
 type Pair<'a> = pest::iterators::Pair<'a, Rule>;
 type Pairs<'a> = pest::iterators::Pairs<'a, Rule>;
 
-pub fn parse_program(code: &str) -> Result<Program> {
-    let program = Parser::parse(Rule::program, code)
+fn parse_input(rule: Rule, input: &str) -> Result<Pair> {
+    Ok(Parser::parse(rule, input)
         .context("Failed to parse input")?
         .next()
-        .unwrap();
+        .unwrap())
+}
+
+pub fn parse_program(code: &str) -> Result<Program> {
+    let program = parse_input(Rule::program, code)?;
 
     let mut data_entries = vec![];
     let mut rules = vec![];
@@ -57,12 +61,34 @@ pub fn parse_program(code: &str) -> Result<Program> {
 }
 
 pub fn parse_query(code: &str) -> Result<Vec<Clause>> {
-    let pair = Parser::parse(Rule::rule_clauses, code)
-        .context("Failed to parse input")?
-        .next()
-        .unwrap();
+    let pair = parse_input(Rule::rule_clauses, code)?;
 
     Ok(pair.into_inner().map(Clause::from).collect())
+}
+
+pub enum ReplStmt {
+    DataEntry(DataEntry),
+    Rule(QueryRule),
+    Query(Vec<Clause>),
+}
+
+pub fn parse_repl_stmt(code: &str) -> Result<ReplStmt> {
+    let pair = parse_input(Rule::repl_stmt, code)?;
+    let pair = pair.into_inner().next().unwrap();
+    Ok(match pair.as_rule() {
+        Rule::program_entry => {
+            let pair = pair.into_inner().next().unwrap();
+            match pair.as_rule() {
+                Rule::data_entry => ReplStmt::DataEntry(pair.into()),
+                Rule::rule => ReplStmt::Rule(pair.into()),
+                _ => unreachable!(),
+            }
+        }
+
+        Rule::rule_clauses => ReplStmt::Query(pair.into_inner().map(Clause::from).collect()),
+
+        _ => unreachable!(),
+    })
 }
 
 fn expect_next_rule<'a, P: BorrowMut<Pairs<'a>>>(mut pairs: P, rule: Rule) -> Pair<'a> {

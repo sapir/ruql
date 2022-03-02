@@ -3,21 +3,37 @@ use anyhow::Result;
 // dependency
 use rustyline::{error::ReadlineError, Editor};
 
-use ruql::{parse_program, parse_query, Prelude};
+use ruql::{
+    parse_program,
+    parser::{parse_repl_stmt, ReplStmt},
+    Prelude,
+};
 
 const PRELUDE_FILENAME: &str = "prelude.ruql";
 
-fn handle_input(prelude: &Prelude, code: &str) -> Result<String> {
-    // TODO: support definitions
-    let query = parse_query(code)?;
-    let query = prelude.compile(query)?;
-    Ok(query.to_sql())
+fn handle_input(prelude: &mut Prelude, code: &str) -> Result<()> {
+    match parse_repl_stmt(code)? {
+        ReplStmt::DataEntry(data_entry) => {
+            prelude.add_data_entry(data_entry)?;
+        }
+
+        ReplStmt::Rule(rule) => {
+            prelude.add_rule(rule)?;
+        }
+
+        ReplStmt::Query(query) => {
+            let query = prelude.compile(query)?;
+            println!("{}", query.to_sql());
+        }
+    }
+
+    Ok(())
 }
 
 fn main() -> Result<()> {
     // TODO: completer
     let mut editor = Editor::<()>::new();
-    let prelude = if let Ok(code) = std::fs::read_to_string(PRELUDE_FILENAME) {
+    let mut prelude = if let Ok(code) = std::fs::read_to_string(PRELUDE_FILENAME) {
         let program = parse_program(&code)?;
         Prelude::from(program)
     } else {
@@ -34,13 +50,12 @@ fn main() -> Result<()> {
                 input.push_str(line.trim());
                 input.push('\n');
                 if input.contains(';') {
+                    // TODO: split by ';'
                     let input = std::mem::take(&mut input);
                     editor.add_history_entry(input.trim());
 
-                    match handle_input(&prelude, &input) {
-                        Ok(sql) => {
-                            println!("{}", sql);
-                        }
+                    match handle_input(&mut prelude, &input) {
+                        Ok(()) => {}
                         Err(e) => {
                             println!("Error: {}", e);
                         }

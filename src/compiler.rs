@@ -1,6 +1,6 @@
 use std::collections::{hash_map, HashMap};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use itertools::Itertools;
 
 use crate::ast::{
@@ -16,6 +16,7 @@ pub struct Prelude {
 
 impl From<Program> for Prelude {
     fn from(program: Program) -> Self {
+        // TODO: verify no duplicate data entries
         let data_entries = program
             .data_entries
             .into_iter()
@@ -48,6 +49,34 @@ impl Prelude {
         };
 
         QueryBuilder::compile(self, query)
+    }
+
+    pub fn add_data_entry(&mut self, entry: DataEntry) -> Result<()> {
+        if self.data_entries.contains_key(&entry.name) {
+            bail!("Duplicate data entry {:?}", entry.name);
+        }
+
+        self.data_entries.insert(entry.name.clone(), entry);
+        Ok(())
+    }
+
+    pub fn add_rule(&mut self, rule: Rule) -> Result<()> {
+        match self.rules.entry(rule.name.clone()) {
+            hash_map::Entry::Occupied(mut occupied) => {
+                // TODO: verify that column names are consistent
+                occupied.get_mut().push(rule);
+            }
+
+            hash_map::Entry::Vacant(vacant) => {
+                if self.data_entries.contains_key(&rule.name) {
+                    bail!("Rule conflicts with existing data entry {:?}", rule.name);
+                }
+
+                vacant.insert(vec![rule]);
+            }
+        }
+
+        Ok(())
     }
 }
 

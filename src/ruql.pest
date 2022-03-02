@@ -16,6 +16,10 @@ program = {
     ~ EOI
 }
 
+repl_stmt = {
+    SOI ~ (program_entry | rule_clauses) ~ ";" ~ EOI
+}
+
 program_entry = {
     data_entry
     | rule
