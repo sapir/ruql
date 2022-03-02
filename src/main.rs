@@ -1,10 +1,6 @@
 use anyhow::Result;
 
-use crate::parser::{parse_program, parse_query};
-
-mod ast;
-mod compiler;
-mod parser;
+use ruql::{parse_program, parse_query, Prelude};
 
 fn main() -> Result<()> {
     let program = parse_program(
@@ -19,7 +15,7 @@ fn main() -> Result<()> {
         ",
     )?;
 
-    let prelude = compiler::Prelude::from(program);
+    let prelude = Prelude::from(program);
 
     let query = parse_query("israeli_cities(name);")?;
     let query = prelude.compile(query)?;
