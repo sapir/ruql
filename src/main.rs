@@ -25,19 +25,25 @@ fn main() -> Result<()> {
     };
 
     // TODO: save/restore readline history
+    let mut input = String::new();
     loop {
-        let readline = editor.readline("> ");
+        let readline = editor.readline(if input.is_empty() { "ruql> " } else { " ...> " });
+
         match readline {
             Ok(line) => {
-                editor.add_history_entry(line.as_str());
+                input.push_str(line.trim());
+                input.push('\n');
+                if input.contains(';') {
+                    let input = std::mem::take(&mut input);
+                    editor.add_history_entry(input.trim());
 
-                // TODO: multiline inputs
-                match handle_input(&prelude, &line) {
-                    Ok(sql) => {
-                        println!("{}", sql);
-                    }
-                    Err(e) => {
-                        println!("Error: {}", e);
+                    match handle_input(&prelude, &input) {
+                        Ok(sql) => {
+                            println!("{}", sql);
+                        }
+                        Err(e) => {
+                            println!("Error: {}", e);
+                        }
                     }
                 }
             }
