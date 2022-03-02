@@ -8,7 +8,7 @@ use crate::ast::{
     RuleName, SourceClause,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Prelude {
     data_entries: HashMap<RuleName, DataEntry>,
     rules: HashMap<RuleName, Vec<Rule>>,
