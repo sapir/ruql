@@ -472,7 +472,8 @@ impl QueryBuilder {
                     .collect::<Result<Vec<Query>, _>>()?,
             )
         } else {
-            return Err(anyhow!("Unknown rule name {:?}", name));
+            // Assume table belongs to the external database
+            return Ok(Source::NamedTable(name.to_owned()));
         };
 
         let index = self.with_clauses.len();

@@ -3,6 +3,11 @@
 A WIP experimental database query language, inspired by
 [Logica](https://logica.dev/).
 
+The main binary currently runs queries against an sqlite database specified as a
+commandline argument. If no argument is specified, queries are instead run
+against an empty in-memory database; query data can still be specified in ruql
+syntax, though.
+
 ```
 ruql> data cities(name, country) =
  ...>     ("Jerusalem", "Israel"),
