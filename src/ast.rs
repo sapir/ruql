@@ -2,7 +2,7 @@ pub type Identifier = String;
 pub type RuleName = Identifier;
 pub type ColumnName = Identifier;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Literal(pub String);
 
 #[derive(Clone, Debug)]

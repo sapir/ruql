@@ -96,7 +96,7 @@ pub fn auto_detect_columns(clauses: &[Clause]) -> Vec<ColumnName> {
 
 #[derive(Clone, Debug)]
 pub struct Query {
-    pub projection: Vec<SourcedColumn>,
+    pub projection: Vec<ValueProjection>,
     pub sources: Vec<ProjectedSource>,
     pub selection: Vec<Condition>,
 }
@@ -117,14 +117,19 @@ impl Query {
             &self
                 .projection
                 .iter()
-                .copied()
-                .map(|column| {
-                    let (source_index, column) = self.get_column(column);
-                    let mut proj_str =
-                        format!("{}.{}", Self::source_name(source_index), column.src);
-                    if column.src != column.dst {
+                .map(|value_proj| {
+                    let mut proj_str = value_proj.src.to_sql(self);
+
+                    let rename_required = if let Value::ColumnValue(src_column) = value_proj.src {
+                        let (_, column) = self.get_column(src_column);
+                        column.dst != value_proj.dst
+                    } else {
+                        true
+                    };
+
+                    if rename_required {
                         proj_str.push_str(" AS ");
-                        proj_str.push_str(&column.dst);
+                        proj_str.push_str(&value_proj.dst);
                     }
                     proj_str
                 })
@@ -190,7 +195,7 @@ impl Query {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SourcedColumn {
     pub source_index: usize,
     pub column_index: usize,
@@ -200,6 +205,12 @@ pub struct SourcedColumn {
 pub struct ProjectedSource {
     pub source: Source,
     pub projection: Vec<ColumnProjection>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ValueProjection {
+    src: Value,
+    dst: ColumnName,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -227,7 +238,7 @@ impl Condition {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
     ColumnValue(SourcedColumn),
     Literal(Literal),
@@ -403,11 +414,18 @@ impl QueryBuilder {
 
         let projection = columns
             .iter()
-            .map(|column| {
-                column_map
+            .map(|column| -> Result<ValueProjection> {
+                let column = column_map
                     .get(column)
                     .ok_or_else(|| anyhow!("Unknown column {:?}", column))
-                    .copied()
+                    .copied()?;
+
+                Ok(ValueProjection {
+                    src: Value::ColumnValue(column),
+                    dst: sources[column.source_index].projection[column.column_index]
+                        .dst
+                        .clone(),
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -419,24 +437,47 @@ impl QueryBuilder {
     }
 
     fn compile_subquery(&mut self, prelude: &Prelude, name: &str) -> Result<Source> {
-        if let Some(_) = prelude.data_entries.get(name) {
+        let union = if let Some(entry) = prelude.data_entries.get(name) {
             assert!(!prelude.rules.contains_key(name));
 
-            // TODO: generate the data instead
-            Ok(Source::NamedTable(name.to_owned()))
+            QueryUnion(
+                entry
+                    .tuples
+                    .iter()
+                    .map(|tuple| {
+                        assert_eq!(tuple.len(), entry.columns.len());
+
+                        Query {
+                            projection: entry
+                                .columns
+                                .iter()
+                                .cloned()
+                                .zip(tuple.iter().cloned())
+                                .map(|(name, value)| ValueProjection {
+                                    src: Value::Literal(value),
+                                    dst: name,
+                                })
+                                .collect(),
+                            sources: vec![],
+                            selection: vec![],
+                        }
+                    })
+                    .collect(),
+            )
         } else if let Some(rules) = prelude.rules.get(name) {
-            let union = QueryUnion(
+            QueryUnion(
                 rules
                     .iter()
                     .map(|rule| self.compile_rule(prelude, rule))
                     .collect::<Result<Vec<Query>, _>>()?,
-            );
-            let index = self.with_clauses.len();
-            self.with_clauses.push(union);
-            Ok(Source::WithClause(WithClauseId(index)))
+            )
         } else {
-            Err(anyhow!("Unknown rule name {:?}", name))
-        }
+            return Err(anyhow!("Unknown rule name {:?}", name));
+        };
+
+        let index = self.with_clauses.len();
+        self.with_clauses.push(union);
+        Ok(Source::WithClause(WithClauseId(index)))
     }
 
     fn compile(prelude: &Prelude, rule: Rule) -> Result<FullQuery> {
