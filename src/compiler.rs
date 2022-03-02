@@ -358,37 +358,32 @@ impl QueryBuilder {
                     // old length.
                     let source_index = sources.len();
 
-                    let projection = projection
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(i, column_projection)| {
-                            let column_id = SourcedColumn {
-                                source_index,
-                                column_index: i,
-                            };
+                    for (i, column_projection) in projection.iter().enumerate() {
+                        let column_id = SourcedColumn {
+                            source_index,
+                            column_index: i,
+                        };
 
-                            match column_map.entry(column_projection.dst.clone()) {
-                                hash_map::Entry::Vacant(vacant) => {
-                                    vacant.insert(column_id);
-
-                                    Some(column_projection.clone())
-                                }
-
-                                hash_map::Entry::Occupied(occupied) => {
-                                    // A duplicate column means the query wants
-                                    // the 2 columns to be equal.
-                                    selection.push(Condition {
-                                        lhs: Value::ColumnValue(*occupied.get()),
-                                        rhs: Value::ColumnValue(column_id),
-                                    });
-
-                                    None
-                                }
+                        match column_map.entry(column_projection.dst.clone()) {
+                            hash_map::Entry::Vacant(vacant) => {
+                                vacant.insert(column_id);
                             }
-                        })
-                        .collect();
 
-                    sources.push(ProjectedSource { source, projection });
+                            hash_map::Entry::Occupied(occupied) => {
+                                // A duplicate column means the query wants
+                                // the 2 columns to be equal.
+                                selection.push(Condition {
+                                    lhs: Value::ColumnValue(*occupied.get()),
+                                    rhs: Value::ColumnValue(column_id),
+                                });
+                            }
+                        }
+                    }
+
+                    sources.push(ProjectedSource {
+                        source,
+                        projection: projection.clone(),
+                    });
                 }
 
                 Clause::Condition(_) => {}
