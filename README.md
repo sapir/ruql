@@ -12,11 +12,11 @@ syntax, though.
 ruql> data cities(name, country) =
  ...>     ("Jerusalem", "Israel"),
  ...>     ("Paris", "France"),
- ...>     ("London", "England")
+ ...>     ("London", "England"),
  ...> ;
 ruql> israeli_cities(name) =
  ...>     cities(name, country),
- ...>     country = "Israel"
+ ...>     country = "Israel",
  ...> ;
 ruql> israeli_cities(name);
 Jerusalem
