@@ -5,6 +5,13 @@ use std::iter::FromIterator;
 
 use crate::{ast::Literal, parse_program, parse_query, Prelude};
 
+const PRELUDE_BAZ_DATA_ENTRY: &str = r#"
+data baz(a, b, c) =
+    (1, 2, "aaa"),
+    (1, 3, "bbb"),
+;
+"#;
+
 fn setup_db() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
     conn.execute_batch(
@@ -38,14 +45,15 @@ fn test_query(prelude_code: &str, code: &str, expected: &[&[Literal]]) {
         Prelude::from(prelude)
     };
 
+    let conn = setup_db();
+
     let query = parse_query(code).unwrap();
-    let query = prelude.compile(query).unwrap();
+    let query = prelude.compile(&conn, query).unwrap();
     let sql = query.to_sql();
     println!("***** BEGIN SQL *****");
     println!("{}", sql);
     println!("***** END SQL *****");
 
-    let conn = setup_db();
     let mut stmt = conn.prepare_cached(&sql).unwrap();
     let column_count = stmt.column_count();
     let mut result_rows = stmt.query([]).unwrap();
@@ -95,10 +103,113 @@ fn test_select_all_columns() {
 }
 
 #[test]
+fn test_single_data_entry_splat_in_rule_rhs() {
+    let mut prelude = PRELUDE_BAZ_DATA_ENTRY.to_owned();
+    prelude.push_str("tmp(a, b, c) = baz(..);");
+    test_query(
+        &prelude,
+        "tmp(a, b, c);",
+        &[
+            &[int(1), int(2), string("aaa")],
+            &[int(1), int(3), string("bbb")],
+        ],
+    );
+}
+
+#[test]
+fn test_single_subquery_splat_in_rule_rhs() {
+    let mut prelude = PRELUDE_BAZ_DATA_ENTRY.to_owned();
+    prelude.push_str(
+        "tmp(a, b, c) = baz(a, b, c);
+        tmp2(a, b, c) = tmp(..);",
+    );
+    test_query(
+        &prelude,
+        "tmp2(a, b, c);",
+        &[
+            &[int(1), int(2), string("aaa")],
+            &[int(1), int(3), string("bbb")],
+        ],
+    );
+}
+
+#[test]
+fn test_single_external_table_splat_in_rule_rhs() {
+    let mut prelude = PRELUDE_BAZ_DATA_ENTRY.to_owned();
+    prelude.push_str("tmp(a, b, c) = foo(..);");
+    test_query(
+        &prelude,
+        "tmp(a, b, c);",
+        &[
+            &[int(1), int(2), string("first")],
+            &[int(1), int(3), string("second")],
+            &[int(2), int(4), string("third")],
+            &[int(2), int(5), string("fourth")],
+        ],
+    );
+}
+
+#[test]
+fn test_single_data_entry_splat_in_query_rhs() {
+    test_query(
+        PRELUDE_BAZ_DATA_ENTRY,
+        "baz(..);",
+        &[
+            &[int(1), int(2), string("aaa")],
+            &[int(1), int(3), string("bbb")],
+        ],
+    );
+}
+
+#[test]
+fn test_single_subquery_splat_in_query_rhs() {
+    let mut prelude = PRELUDE_BAZ_DATA_ENTRY.to_owned();
+    prelude.push_str("tmp(a, b, c) = baz(a, b, c);");
+    test_query(
+        &prelude,
+        "tmp(..);",
+        &[
+            &[int(1), int(2), string("aaa")],
+            &[int(1), int(3), string("bbb")],
+        ],
+    );
+}
+
+#[test]
+fn test_single_external_table_splat_in_query_rhs() {
+    test_query(
+        "",
+        "foo(..);",
+        &[
+            &[int(1), int(2), string("first")],
+            &[int(1), int(3), string("second")],
+            &[int(2), int(4), string("third")],
+            &[int(2), int(5), string("fourth")],
+        ],
+    );
+}
+
+#[test]
 fn test_join_two_tables() {
     test_query(
         "",
         "foo(a, b, c), bar(a, y, z);",
+        &[
+            &[int(1), int(2), string("first"), int(3), string("hello")],
+            &[int(1), int(2), string("first"), int(5), string("world")],
+            &[int(1), int(3), string("second"), int(3), string("hello")],
+            &[int(1), int(3), string("second"), int(5), string("world")],
+            &[int(2), int(4), string("third"), int(5), string("bye")],
+            &[int(2), int(5), string("fourth"), int(5), string("bye")],
+        ],
+    );
+}
+
+#[test]
+fn test_join_with_splat_in_rule() {
+    test_query(
+        "tmp(a, b, c, y, z) = foo(..), bar(..);",
+        "tmp(a, b, c, y, z);",
         &[
             &[int(1), int(2), string("first"), int(3), string("hello")],
             &[int(1), int(2), string("first"), int(5), string("world")],

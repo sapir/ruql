@@ -49,8 +49,9 @@ rule_clause = {
 }
 
 src_clause = { identifier ~ "(" ~ (")" | src_clause_params ~ ")")  }
-src_clause_params = { column_projection ~ ("," ~ column_projection)* }
+src_clause_params = { splat | column_projection ~ ("," ~ column_projection)* ~ ("," ~ splat)? }
 column_projection = { identifier ~ (":" ~ value)? }
+splat = { ".." }
 
 value = {
     identifier

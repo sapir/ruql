@@ -1,4 +1,7 @@
-use std::collections::{hash_map, HashMap};
+use std::{
+    borrow::Cow,
+    collections::{hash_map, HashMap, HashSet},
+};
 
 use anyhow::{anyhow, bail, Result};
 use itertools::Itertools;
@@ -7,6 +10,22 @@ use crate::ast::{
     self, Clause, ColumnName, ColumnProjection, ConditionClause, DataEntry, Literal, Program, Rule,
     RuleName, SourceClause,
 };
+
+fn get_database_table_columns<'a>(
+    conn: &'a rusqlite::Connection,
+    table_name: &str,
+) -> Result<Vec<ColumnName>> {
+    assert!(!table_name.contains('`'));
+    let stmt = conn
+        .prepare(&format!("SELECT * FROM `{}` LIMIT 0", table_name))
+        .unwrap();
+
+    Ok(stmt
+        .column_names()
+        .into_iter()
+        .map(|s| s.to_owned())
+        .collect())
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct Prelude {
@@ -39,8 +58,8 @@ impl From<Program> for Prelude {
 }
 
 impl Prelude {
-    pub fn compile(&self, query: Vec<Clause>) -> Result<FullQuery> {
-        let columns = auto_detect_columns(&query);
+    pub fn compile(&self, db_conn: &rusqlite::Connection, query: Vec<Clause>) -> Result<FullQuery> {
+        let columns = auto_detect_columns(self, db_conn, &query);
 
         let query = Rule {
             name: "query".to_owned(),
@@ -48,7 +67,7 @@ impl Prelude {
             clauses: query,
         };
 
-        QueryBuilder::compile(self, query)
+        QueryBuilder::compile(self, db_conn, query)
     }
 
     pub fn add_data_entry(&mut self, entry: DataEntry) -> Result<()> {
@@ -78,22 +97,56 @@ impl Prelude {
 
         Ok(())
     }
+
+    pub fn get_named_source_columns<'a>(
+        &'a self,
+        name: &str,
+        db_conn: &'a rusqlite::Connection,
+    ) -> Result<Cow<'a, [ColumnName]>> {
+        if let Some(entry) = self.data_entries.get(name) {
+            Ok(Cow::Borrowed(&entry.columns))
+        } else if let Some(rules) = self.rules.get(name) {
+            Ok(Cow::Borrowed(&rules[0].columns))
+        } else {
+            get_database_table_columns(db_conn, name).map(Cow::Owned)
+        }
+    }
 }
 
-pub fn auto_detect_columns(clauses: &[Clause]) -> Vec<ColumnName> {
+pub fn auto_detect_columns(
+    prelude: &Prelude,
+    db_conn: &rusqlite::Connection,
+    clauses: &[Clause],
+) -> Vec<ColumnName> {
     clauses
         .iter()
         .filter_map(|clause| match clause {
             Clause::Source(source) => Some(source),
             Clause::Condition(_) => None,
         })
-        .flat_map(|source| &source.projection)
+        .flat_map(|source| {
+            let proj = &source.projection;
+
+            let mut columns = proj.columns.iter().map(Cow::Borrowed).collect::<Vec<_>>();
+            if proj.has_splat {
+                columns.extend(
+                    iter_splat_projection(
+                        proj,
+                        // TODO: don't panic
+                        &prelude
+                            .get_named_source_columns(&source.name, db_conn)
+                            .expect("failed to query source for splat operator in auto detect"),
+                    )
+                    .map(Cow::Owned),
+                );
+            }
+            columns
+        })
         .filter_map(|projection| match &projection.dst {
-            ast::Value::Column(name) => Some(name),
+            ast::Value::Column(name) => Some(name.clone()),
             _ => None,
         })
         .unique()
-        .cloned()
         .collect()
 }
 
@@ -215,6 +268,8 @@ pub struct ProjectedSource {
     pub projection: Vec<ColumnProjection>,
 }
 
+/// Note that naming here is opposite from how it works in `ColumnProjection`.
+/// Here, `src` is the value, `dst` is the identifier.
 #[derive(Clone, Debug)]
 pub struct ValueProjection {
     src: Value,
@@ -330,13 +385,37 @@ impl FullQuery {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-struct QueryBuilder {
+fn iter_splat_projection<'a>(
+    projection: &'a ast::Projection,
+    source_columns: &'a [ColumnName],
+) -> impl Iterator<Item = ColumnProjection> + 'a {
+    // splat means source columns that weren't specified explicitly in the
+    // projection, so let's hash it to maybe make lookups faster. As always, we
+    // need to be careful as to when we use src and when we use dst.
+    let projected_columns = projection
+        .columns
+        .iter()
+        .map(|column| column.src.as_str())
+        .collect::<HashSet<_>>();
+
+    source_columns
+        .into_iter()
+        .filter(move |column_name| !projected_columns.contains(column_name.as_str()))
+        .map(|column_name| ColumnProjection {
+            src: column_name.clone(),
+            dst: ast::Value::Column(column_name.clone()),
+        })
+}
+
+#[derive(Debug)]
+struct QueryBuilder<'a> {
+    prelude: &'a Prelude,
+    db_conn: &'a rusqlite::Connection,
     with_clauses: Vec<QueryUnion>,
 }
 
-impl QueryBuilder {
-    fn compile_rule(&mut self, prelude: &Prelude, rule: &Rule) -> Result<Query> {
+impl QueryBuilder<'_> {
+    fn compile_rule(&mut self, rule: &Rule) -> Result<Query> {
         let Rule {
             name: rule_name,
             columns,
@@ -360,14 +439,35 @@ impl QueryBuilder {
                     let source = if source_name == rule_name {
                         Source::RecurseToSelf
                     } else {
-                        self.compile_subquery(prelude, source_name)?
+                        self.compile_subquery(source_name)?
                     };
 
                     // Once we push this source, its index will be equal to the
                     // old length.
                     let source_index = sources.len();
 
-                    for (i, column_projection) in projection.iter().enumerate() {
+                    let final_projection = {
+                        let mut column_projections = projection.columns.clone();
+                        if projection.has_splat {
+                            if matches!(source, Source::RecurseToSelf) {
+                                // TODO: we actually may be able to implement this
+                                bail!("splat in projected recursive table");
+                            } else {
+                                let source_columns = self
+                                    .prelude
+                                    .get_named_source_columns(source_name, self.db_conn)
+                                    .expect(
+                                        "failed to query source table for splat operator in rule",
+                                    );
+
+                                column_projections
+                                    .extend(iter_splat_projection(projection, &source_columns));
+                            }
+                        }
+                        column_projections
+                    };
+
+                    for (i, column_projection) in final_projection.iter().enumerate() {
                         let column_id = SourcedColumn {
                             source_index,
                             column_index: i,
@@ -400,7 +500,7 @@ impl QueryBuilder {
 
                     sources.push(ProjectedSource {
                         source,
-                        projection: projection.clone(),
+                        projection: final_projection,
                     });
                 }
 
@@ -450,9 +550,9 @@ impl QueryBuilder {
         })
     }
 
-    fn compile_subquery(&mut self, prelude: &Prelude, name: &str) -> Result<Source> {
-        let union = if let Some(entry) = prelude.data_entries.get(name) {
-            assert!(!prelude.rules.contains_key(name));
+    fn compile_subquery(&mut self, name: &str) -> Result<Source> {
+        let union = if let Some(entry) = self.prelude.data_entries.get(name) {
+            assert!(!self.prelude.rules.contains_key(name));
 
             QueryUnion(
                 entry
@@ -478,11 +578,11 @@ impl QueryBuilder {
                     })
                     .collect(),
             )
-        } else if let Some(rules) = prelude.rules.get(name) {
+        } else if let Some(rules) = self.prelude.rules.get(name) {
             QueryUnion(
                 rules
                     .iter()
-                    .map(|rule| self.compile_rule(prelude, rule))
+                    .map(|rule| self.compile_rule(rule))
                     .collect::<Result<Vec<Query>, _>>()?,
             )
         } else {
@@ -495,9 +595,13 @@ impl QueryBuilder {
         Ok(Source::WithClause(WithClauseId(index)))
     }
 
-    fn compile(prelude: &Prelude, rule: Rule) -> Result<FullQuery> {
-        let mut zelf = QueryBuilder::default();
-        let main_query = zelf.compile_rule(prelude, &rule)?;
+    fn compile(prelude: &Prelude, db_conn: &rusqlite::Connection, rule: Rule) -> Result<FullQuery> {
+        let mut zelf = QueryBuilder {
+            prelude,
+            db_conn,
+            with_clauses: vec![],
+        };
+        let main_query = zelf.compile_rule(&rule)?;
         Ok(FullQuery {
             with_clauses: zelf.with_clauses,
             main_query: main_query.into(),

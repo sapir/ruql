@@ -28,7 +28,9 @@ fn handle_input(prelude: &mut Prelude, database: &rusqlite::Connection, code: &s
         }
 
         ReplStmt::Query(query) => {
-            let query = prelude.compile(query).context("Compiling query to SQL")?;
+            let query = prelude
+                .compile(database, query)
+                .context("Compiling query to SQL")?;
             let sql = query.to_sql();
 
             let mut stmt = database

@@ -39,7 +39,13 @@ pub enum Clause {
 #[derive(Clone, Debug)]
 pub struct SourceClause {
     pub name: RuleName,
-    pub projection: Vec<ColumnProjection>,
+    pub projection: Projection,
+}
+
+#[derive(Clone, Debug)]
+pub struct Projection {
+    pub columns: Vec<ColumnProjection>,
+    pub has_splat: bool,
 }
 
 #[derive(Clone, Debug)]

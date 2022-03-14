@@ -6,7 +6,7 @@ use pest_derive::Parser;
 
 use crate::ast::{
     Clause, ColumnName, ColumnProjection, ConditionClause, DataEntry, Identifier, Literal, Program,
-    Rule as QueryRule, RuleName, SourceClause, Value,
+    Projection, Rule as QueryRule, RuleName, SourceClause, Value,
 };
 
 #[derive(Parser)]
@@ -199,9 +199,25 @@ impl From<Pair<'_>> for SourceClause {
         let name = expect_identifier(&mut pairs);
 
         let params = expect_next_rule(pairs, Rule::src_clause_params);
-        let projection = params.into_inner().map(ColumnProjection::from).collect();
+        let mut has_splat = false;
+        let mut columns = vec![];
+        for pair in params.into_inner() {
+            match pair.as_rule() {
+                Rule::column_projection => {
+                    columns.push(pair.into());
+                }
 
-        Self { name, projection }
+                Rule::splat => {
+                    has_splat = true;
+                }
+
+                _ => unreachable!(),
+            }
+        }
+        Self {
+            name,
+            projection: Projection { columns, has_splat },
+        }
     }
 }
 
