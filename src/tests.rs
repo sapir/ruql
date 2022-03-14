@@ -1,0 +1,163 @@
+use num_bigint::BigInt;
+use rusqlite::{types::ValueRef, Connection};
+
+use crate::{ast::Literal, parse_program, parse_query, Prelude};
+
+fn setup_db() -> Connection {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "BEGIN;
+        CREATE TABLE foo(a, b, c);
+        CREATE TABLE bar(a, y, z);
+        INSERT INTO foo(a, b, c) VALUES
+            (1, 2, 'first'),
+            (1, 3, 'second'),
+            (2, 4, 'third'),
+            (2, 5, 'fourth')
+        ;
+        INSERT INTO bar(a, y, z) VALUES
+            (1, 3, 'hello'),
+            (1, 5, 'world'),
+            (3, -10, 'hi'),
+            (2, 5, 'bye')
+        ;
+        COMMIT;",
+    )
+    .unwrap();
+    conn
+}
+
+fn test_query(prelude_code: &str, code: &str, expected: &[&[Literal]]) {
+    let prelude_code = prelude_code.trim();
+    let prelude = if prelude_code.is_empty() {
+        Prelude::default()
+    } else {
+        let prelude = parse_program(prelude_code).unwrap();
+        Prelude::from(prelude)
+    };
+
+    let query = parse_query(code).unwrap();
+    let query = prelude.compile(query).unwrap();
+    let sql = query.to_sql();
+    println!("***** BEGIN SQL *****");
+    println!("{}", sql);
+    println!("***** END SQL *****");
+
+    let conn = setup_db();
+    let mut stmt = conn.prepare_cached(&sql).unwrap();
+    let column_count = stmt.column_count();
+    let mut result_rows = stmt.query([]).unwrap();
+    let result_rows = std::iter::from_fn(move || {
+        let row = result_rows.next().unwrap()?;
+        let row = (0..column_count)
+            .map(|i| match row.get_ref(i).unwrap() {
+                ValueRef::Integer(x) => Literal::Integer(x.into()),
+                ValueRef::Text(s) => Literal::String(std::str::from_utf8(s).unwrap().to_owned()),
+                value => panic!("unexpected value type {:?}", value),
+            })
+            .collect::<Vec<_>>();
+        Some(row)
+    })
+    .collect::<Vec<_>>();
+
+    assert_eq!(result_rows, expected);
+}
+
+fn int(n: impl Into<BigInt>) -> Literal {
+    Literal::Integer(n.into())
+}
+
+fn string(s: impl Into<String>) -> Literal {
+    Literal::String(s.into())
+}
+
+#[test]
+fn test_select_column() {
+    test_query("", "foo(a);", &[&[int(1)], &[int(1)], &[int(2)], &[int(2)]]);
+}
+
+#[test]
+fn test_select_all_columns() {
+    test_query(
+        "",
+        "foo(a, b, c);",
+        &[
+            &[int(1), int(2), string("first")],
+            &[int(1), int(3), string("second")],
+            &[int(2), int(4), string("third")],
+            &[int(2), int(5), string("fourth")],
+        ],
+    );
+}
+
+#[test]
+fn test_join_two_tables() {
+    test_query(
+        "",
+        "foo(a, b, c), bar(a, y, z);",
+        &[
+            &[int(1), int(2), string("first"), int(3), string("hello")],
+            &[int(1), int(2), string("first"), int(5), string("world")],
+            &[int(1), int(3), string("second"), int(3), string("hello")],
+            &[int(1), int(3), string("second"), int(5), string("world")],
+            &[int(2), int(4), string("third"), int(5), string("bye")],
+            &[int(2), int(5), string("fourth"), int(5), string("bye")],
+        ],
+    );
+}
+
+#[test]
+fn test_join_two_tables_with_extra_join_projection_condition() {
+    test_query(
+        "",
+        "foo(a, b, c), bar(a, y: b, z);",
+        &[
+            &[int(1), int(3), string("second"), string("hello")],
+            &[int(2), int(5), string("fourth"), string("bye")],
+        ],
+    );
+}
+
+#[test]
+fn test_integer_literal_projection_condition() {
+    test_query("", "foo(a, b: 2, c);", &[&[int(1), string("first")]]);
+}
+
+#[test]
+fn test_integer_literal_condition_clause() {
+    test_query(
+        "",
+        "foo(a, b, c), b = 2;",
+        &[&[int(1), int(2), string("first")]],
+    );
+}
+
+#[test]
+fn test_join_table_with_self() {
+    test_query(
+        "",
+        "foo(a, b), foo(a: b, b: c);",
+        &[&[int(1), int(2), int(4)], &[int(1), int(2), int(5)]],
+    );
+}
+
+#[test]
+fn test_recursive() {
+    test_query(
+        "tmp(a) = foo(a);
+        tmp(a) = tmp(a: x), foo(a: x, b: a);",
+        "tmp(a);",
+        &[&[int(1)], &[int(2)], &[int(3)], &[int(4)], &[int(5)]],
+    );
+}
+
+#[test]
+#[ignore]
+fn test_recursive_with_inverse_statement_order() {
+    test_query(
+        "tmp(a) = tmp(a: x), foo(a: x, b: a);
+        tmp(a) = foo(a);",
+        "tmp(a);",
+        &[&[int(1)], &[int(2)], &[int(3)], &[int(4)], &[int(5)]],
+    );
+}
