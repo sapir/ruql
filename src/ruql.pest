@@ -9,6 +9,13 @@ identifier = @{ !keyword ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")+ }
 string_literal = ${ "\"" ~ string_interior ~ "\"" }
 string_interior = @{ (!"\"" ~ ANY)* }
 
+integer_literal = @{ "-"? ~ ("0" | (ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*)) }
+
+literal = {
+    integer_literal
+    | string_literal
+}
+
 program = {
     SOI
     ~ program_entry
@@ -44,9 +51,9 @@ src_clause = { identifier ~ "(" ~ (")" | src_clause_params ~ ")")  }
 src_clause_params = { identifier ~ ("," ~ identifier)* }
 
 // TODO: This is just a placeholder
-condition_clause = { identifier ~ "=" ~ string_literal }
+condition_clause = { identifier ~ "=" ~ literal }
 
 data_entry = { "data" ~ rule_lhs ~ "=" ~ data_rhs }
 
 data_rhs = { data_tuple ~ ("," ~ data_tuple)* }
-data_tuple = { "(" ~ string_literal ~ ("," ~ string_literal)* ~ ")" }
+data_tuple = { "(" ~ literal ~ ("," ~ literal)* ~ ")" }

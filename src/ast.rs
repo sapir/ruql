@@ -1,9 +1,12 @@
+use num_bigint::BigInt;
+
 pub type Identifier = String;
 pub type RuleName = Identifier;
 pub type ColumnName = Identifier;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Literal {
+    Integer(BigInt),
     String(String),
 }
 

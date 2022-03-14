@@ -108,9 +108,22 @@ fn expect_identifier<'a, P: BorrowMut<Pairs<'a>>>(pairs: P) -> Identifier {
 
 impl From<Pair<'_>> for Literal {
     fn from(pair: Pair<'_>) -> Self {
-        assert_eq!(pair.as_rule(), Rule::string_literal);
-        let interior = expect_next_rule(pair.into_inner(), Rule::string_interior);
-        Literal::String(interior.as_str().to_string())
+        assert_eq!(pair.as_rule(), Rule::literal);
+        let pair = pair.into_inner().next().unwrap();
+        match pair.as_rule() {
+            Rule::integer_literal => Literal::Integer(
+                pair.as_str()
+                    .parse()
+                    .expect("failed to convert integer to bignum"),
+            ),
+
+            Rule::string_literal => {
+                let interior = expect_next_rule(pair.into_inner(), Rule::string_interior);
+                Literal::String(interior.as_str().to_string())
+            }
+
+            _ => unreachable!("{:?}", pair),
+        }
     }
 }
 
