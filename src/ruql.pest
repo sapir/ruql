@@ -62,5 +62,5 @@ condition_clause = { identifier ~ "=" ~ literal }
 
 data_entry = { "data" ~ rule_lhs ~ "=" ~ data_rhs }
 
-data_rhs = { data_tuple ~ ("," ~ data_tuple)* }
-data_tuple = { "(" ~ literal ~ ("," ~ literal)* ~ ")" }
+data_rhs = { data_tuple ~ ("," ~ data_tuple)* ~ ","? }
+data_tuple = { "(" ~ literal ~ ("," ~ literal)* ~ ","? ~ ")" }
