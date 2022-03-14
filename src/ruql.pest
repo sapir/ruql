@@ -49,7 +49,12 @@ rule_clause = {
 
 src_clause = { identifier ~ "(" ~ (")" | src_clause_params ~ ")")  }
 src_clause_params = { column_projection ~ ("," ~ column_projection)* }
-column_projection = { identifier ~ (":" ~ identifier)? }
+column_projection = { identifier ~ (":" ~ value)? }
+
+value = {
+    identifier
+    | literal
+}
 
 // TODO: This is just a placeholder
 condition_clause = { identifier ~ "=" ~ literal }

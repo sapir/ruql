@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Result};
 use itertools::Itertools;
 
 use crate::ast::{
-    Clause, ColumnName, ColumnProjection, ConditionClause, DataEntry, Literal, Program, Rule,
+    self, Clause, ColumnName, ColumnProjection, ConditionClause, DataEntry, Literal, Program, Rule,
     RuleName, SourceClause,
 };
 
@@ -88,7 +88,10 @@ pub fn auto_detect_columns(clauses: &[Clause]) -> Vec<ColumnName> {
             Clause::Condition(_) => None,
         })
         .flat_map(|source| &source.projection)
-        .map(|projection| &projection.dst)
+        .filter_map(|projection| match &projection.dst {
+            ast::Value::Column(name) => Some(name),
+            _ => None,
+        })
         .unique()
         .cloned()
         .collect()
@@ -122,7 +125,12 @@ impl Query {
 
                     let rename_required = if let Value::ColumnValue(src_column) = value_proj.src {
                         let (_, column) = self.get_column(src_column);
-                        column.dst != value_proj.dst
+
+                        if let ast::Value::Column(dst) = &column.dst {
+                            *dst != value_proj.dst
+                        } else {
+                            true
+                        }
                     } else {
                         true
                     };
@@ -365,17 +373,26 @@ impl QueryBuilder {
                             column_index: i,
                         };
 
-                        match column_map.entry(column_projection.dst.clone()) {
-                            hash_map::Entry::Vacant(vacant) => {
-                                vacant.insert(column_id);
-                            }
+                        match &column_projection.dst {
+                            ast::Value::Column(dst) => match column_map.entry(dst.clone()) {
+                                hash_map::Entry::Vacant(vacant) => {
+                                    vacant.insert(column_id);
+                                }
 
-                            hash_map::Entry::Occupied(occupied) => {
-                                // A duplicate column means the query wants
-                                // the 2 columns to be equal.
+                                hash_map::Entry::Occupied(occupied) => {
+                                    // A duplicate column means the query wants
+                                    // the 2 columns to be equal.
+                                    selection.push(Condition {
+                                        lhs: Value::ColumnValue(*occupied.get()),
+                                        rhs: Value::ColumnValue(column_id),
+                                    });
+                                }
+                            },
+
+                            ast::Value::Literal(value) => {
                                 selection.push(Condition {
-                                    lhs: Value::ColumnValue(*occupied.get()),
-                                    rhs: Value::ColumnValue(column_id),
+                                    lhs: Value::ColumnValue(column_id),
+                                    rhs: Value::Literal(value.clone()),
                                 });
                             }
                         }
@@ -418,9 +435,10 @@ impl QueryBuilder {
 
                 Ok(ValueProjection {
                     src: Value::ColumnValue(column),
-                    dst: sources[column.source_index].projection[column.column_index]
-                        .dst
-                        .clone(),
+                    dst: match &sources[column.source_index].projection[column.column_index].dst {
+                        ast::Value::Column(dst) => dst.clone(),
+                        _ => unreachable!(),
+                    },
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;

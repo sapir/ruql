@@ -45,7 +45,13 @@ pub struct SourceClause {
 #[derive(Clone, Debug)]
 pub struct ColumnProjection {
     pub src: ColumnName,
-    pub dst: ColumnName,
+    pub dst: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Value {
+    Column(ColumnName),
+    Literal(Literal),
 }
 
 #[derive(Clone, Debug)]
