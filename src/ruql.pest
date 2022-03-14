@@ -3,8 +3,9 @@ COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
 
 keyword = { "fn" }
 
-identifier_char = @{ ASCII_ALPHANUMERIC | "_" }
-identifier = @{ !keyword ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")+ }
+initial_identifier_char = @{ ASCII_ALPHA | "_" }
+rest_identifier_char = @{ ASCII_ALPHANUMERIC | "_" }
+identifier = @{ !keyword ~ initial_identifier_char ~ rest_identifier_char* }
 
 string_literal = ${ "\"" ~ string_interior ~ "\"" }
 string_interior = @{ (!"\"" ~ ANY)* }
