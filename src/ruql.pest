@@ -41,7 +41,7 @@ rule_lhs = {
     )
 }
 
-rule_clauses = { rule_clause ~ ("," ~ rule_clause)* }
+rule_clauses = { rule_clause ~ ("," ~ rule_clause)* ~ ","? }
 rule_clause = {
     src_clause
     | condition_clause
