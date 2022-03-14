@@ -199,18 +199,23 @@ impl From<Pair<'_>> for SourceClause {
         let name = expect_identifier(&mut pairs);
 
         let params = expect_next_rule(pairs, Rule::src_clause_params);
-        let projection = params
-            .into_inner()
-            .map(|pair| {
-                let name = convert_identifier(pair);
-                ColumnProjection {
-                    src: name.clone(),
-                    dst: name,
-                }
-            })
-            .collect();
+        let projection = params.into_inner().map(ColumnProjection::from).collect();
 
         Self { name, projection }
+    }
+}
+
+impl From<Pair<'_>> for ColumnProjection {
+    fn from(pair: Pair<'_>) -> Self {
+        assert_eq!(pair.as_rule(), Rule::column_projection);
+        let mut pairs = pair.into_inner();
+        let src = expect_identifier(&mut pairs);
+        let dst = match pairs.next() {
+            Some(x) => convert_identifier(x),
+            None => src.clone(),
+        };
+
+        ColumnProjection { src, dst }
     }
 }
 
