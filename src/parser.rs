@@ -110,7 +110,7 @@ impl From<Pair<'_>> for Literal {
     fn from(pair: Pair<'_>) -> Self {
         assert_eq!(pair.as_rule(), Rule::string_literal);
         let interior = expect_next_rule(pair.into_inner(), Rule::string_interior);
-        Self(interior.as_str().to_string())
+        Literal::String(interior.as_str().to_string())
     }
 }
 

@@ -248,7 +248,7 @@ impl Value {
     pub fn to_sql(&self, query: &Query) -> String {
         match self {
             Value::ColumnValue(col) => query.get_column_as_src(*col),
-            Value::Literal(s) => format!("'{}'", s.0.replace('\'', "''")),
+            Value::Literal(Literal::String(s)) => format!("'{}'", s.replace('\'', "''")),
         }
     }
 }

@@ -3,7 +3,9 @@ pub type RuleName = Identifier;
 pub type ColumnName = Identifier;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Literal(pub String);
+pub enum Literal {
+    String(String),
+}
 
 #[derive(Clone, Debug)]
 pub struct Program {
