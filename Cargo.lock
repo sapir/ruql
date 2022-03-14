@@ -245,6 +245,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashbag"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "461d126adae37fcc356c78b4c46966ac5dca1d41244e617af36bd4e09c7673d3"
+
+[[package]]
 name = "hashbrown"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -542,6 +548,7 @@ name = "ruql"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "hashbag",
  "itertools",
  "num-bigint",
  "pest",

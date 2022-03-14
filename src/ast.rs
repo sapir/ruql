@@ -4,7 +4,7 @@ pub type Identifier = String;
 pub type RuleName = Identifier;
 pub type ColumnName = Identifier;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Literal {
     Integer(BigInt),
     String(String),

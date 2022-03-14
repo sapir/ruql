@@ -1,5 +1,7 @@
+use hashbag::HashBag;
 use num_bigint::BigInt;
 use rusqlite::{types::ValueRef, Connection};
+use std::iter::FromIterator;
 
 use crate::{ast::Literal, parse_program, parse_query, Prelude};
 
@@ -60,6 +62,8 @@ fn test_query(prelude_code: &str, code: &str, expected: &[&[Literal]]) {
     })
     .collect::<Vec<_>>();
 
+    let result_rows = HashBag::from_iter(result_rows.iter().map(|x| x.as_slice()));
+    let expected = HashBag::from_iter(expected.iter().map(|x| *x));
     assert_eq!(result_rows, expected);
 }
 

@@ -14,3 +14,6 @@ rustyline = "9.1.2"
 structopt = "0.3.26"
 
 [features]
+
+[dev-dependencies]
+hashbag = "0.1.4"
