@@ -6,7 +6,7 @@ use pest_derive::Parser;
 
 use crate::ast::{
     Clause, ColumnName, ColumnProjection, ConditionClause, DataEntry, Identifier, Literal, Program,
-    Projection, Rule as QueryRule, RuleName, SourceClause, Value,
+    Projection, Rule as QueryRule, SourceClause, Value,
 };
 
 #[derive(Parser)]
@@ -127,25 +127,13 @@ impl From<Pair<'_>> for Literal {
     }
 }
 
-struct RuleLhs {
-    name: RuleName,
-    columns: Vec<ColumnName>,
-}
-
-impl From<Pair<'_>> for RuleLhs {
-    fn from(pair: Pair<'_>) -> Self {
-        assert_eq!(pair.as_rule(), Rule::rule_lhs);
-        let mut pairs = pair.into_inner();
-        let name = expect_identifier(&mut pairs);
-        let columns = pairs.map(convert_identifier).collect();
-        Self { name, columns }
-    }
-}
-
 impl From<Pair<'_>> for DataEntry {
     fn from(pair: Pair<'_>) -> Self {
         let mut pairs = pair.into_inner();
-        let RuleLhs { name, columns } = pairs.next().unwrap().into();
+
+        let name = expect_identifier(&mut pairs);
+        let columns = DataEntryColumns::from(pairs.next().unwrap()).0;
+
         let rhs = expect_next_rule(pairs, Rule::data_rhs);
         let tuples = rhs
             .into_inner()
@@ -154,6 +142,7 @@ impl From<Pair<'_>> for DataEntry {
                 pair.into_inner().map(Literal::from).collect()
             })
             .collect();
+
         Self {
             name,
             columns,
@@ -162,20 +151,25 @@ impl From<Pair<'_>> for DataEntry {
     }
 }
 
+struct DataEntryColumns(Vec<ColumnName>);
+
+impl From<Pair<'_>> for DataEntryColumns {
+    fn from(pair: Pair<'_>) -> Self {
+        assert_eq!(pair.as_rule(), Rule::data_entry_columns);
+        Self(pair.into_inner().map(convert_identifier).collect())
+    }
+}
+
 impl From<Pair<'_>> for QueryRule {
     fn from(pair: Pair<'_>) -> Self {
         let mut pairs = pair.into_inner();
 
-        let RuleLhs { name, columns } = pairs.next().unwrap().into();
+        let lhs = pairs.next().unwrap().into();
 
         let clauses = expect_next_rule(&mut pairs, Rule::rule_clauses);
         let clauses = clauses.into_inner().map(Clause::from).collect();
 
-        Self {
-            name,
-            columns,
-            clauses,
-        }
+        Self { lhs, clauses }
     }
 }
 

@@ -33,7 +33,7 @@ program_entry = {
     | rule
 }
 
-rule = { rule_lhs ~ "=" ~ rule_clauses }
+rule = { src_clause ~ "=" ~ rule_clauses }
 
 rule_lhs = {
     identifier ~ "(" ~ (
@@ -61,7 +61,8 @@ value = {
 // TODO: This is just a placeholder
 condition_clause = { identifier ~ "=" ~ literal }
 
-data_entry = { "data" ~ rule_lhs ~ "=" ~ data_rhs }
+data_entry = { "data" ~ identifier ~ "(" ~ data_entry_columns ~ ")" ~ "=" ~ data_rhs }
+data_entry_columns = { identifier ~ ("," ~ identifier)* ~ ","? }
 
 data_rhs = { data_tuple ~ ("," ~ data_tuple)* ~ ","? }
 data_tuple = { "(" ~ literal ~ ("," ~ literal)* ~ ","? ~ ")" }

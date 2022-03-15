@@ -47,7 +47,7 @@ impl From<Program> for Prelude {
         let rules = program
             .rules
             .into_iter()
-            .into_grouping_map_by(|rule| rule.name.clone())
+            .into_grouping_map_by(|rule| rule.lhs.name.clone())
             .collect();
 
         Self {
@@ -59,11 +59,14 @@ impl From<Program> for Prelude {
 
 impl Prelude {
     pub fn compile(&self, db_conn: &rusqlite::Connection, query: Vec<Clause>) -> Result<FullQuery> {
-        let columns = auto_detect_columns(self, db_conn, &query);
-
         let query = Rule {
-            name: "query".to_owned(),
-            columns,
+            lhs: SourceClause {
+                name: "query".to_owned(),
+                projection: ast::Projection {
+                    columns: vec![],
+                    has_splat: true,
+                },
+            },
             clauses: query,
         };
 
@@ -80,15 +83,18 @@ impl Prelude {
     }
 
     pub fn add_rule(&mut self, rule: Rule) -> Result<()> {
-        match self.rules.entry(rule.name.clone()) {
+        match self.rules.entry(rule.lhs.name.clone()) {
             hash_map::Entry::Occupied(mut occupied) => {
                 // TODO: verify that column names are consistent
                 occupied.get_mut().push(rule);
             }
 
             hash_map::Entry::Vacant(vacant) => {
-                if self.data_entries.contains_key(&rule.name) {
-                    bail!("Rule conflicts with existing data entry {:?}", rule.name);
+                if self.data_entries.contains_key(&rule.lhs.name) {
+                    bail!(
+                        "Rule conflicts with existing data entry {:?}",
+                        rule.lhs.name
+                    );
                 }
 
                 vacant.insert(vec![rule]);
@@ -106,7 +112,19 @@ impl Prelude {
         if let Some(entry) = self.data_entries.get(name) {
             Ok(Cow::Borrowed(&entry.columns))
         } else if let Some(rules) = self.rules.get(name) {
-            Ok(Cow::Borrowed(&rules[0].columns))
+            let rule = &rules[0];
+            if rule.lhs.projection.has_splat {
+                todo!("splat in lhs of source");
+            }
+            Ok(Cow::Owned(
+                rule.lhs
+                    .projection
+                    .columns
+                    .iter()
+                    // TODO: src or dst?
+                    .map(|column| column.src.clone())
+                    .collect(),
+            ))
         } else {
             get_database_table_columns(db_conn, name).map(Cow::Owned)
         }
@@ -417,8 +435,11 @@ struct QueryBuilder<'a> {
 impl QueryBuilder<'_> {
     fn compile_rule(&mut self, rule: &Rule) -> Result<Query> {
         let Rule {
-            name: rule_name,
-            columns,
+            lhs:
+                SourceClause {
+                    name: rule_name,
+                    projection: rule_projection,
+                },
             clauses,
         } = rule;
 
@@ -433,7 +454,7 @@ impl QueryBuilder<'_> {
             match clause {
                 Clause::Source(SourceClause {
                     name: source_name,
-                    projection,
+                    projection: source_projection,
                 }) => {
                     // TODO: detect (and prevent/support) multilevel recursion
                     let source = if source_name == rule_name {
@@ -447,8 +468,8 @@ impl QueryBuilder<'_> {
                     let source_index = sources.len();
 
                     let final_projection = {
-                        let mut column_projections = projection.columns.clone();
-                        if projection.has_splat {
+                        let mut column_projections = source_projection.columns.clone();
+                        if source_projection.has_splat {
                             if matches!(source, Source::RecurseToSelf) {
                                 // TODO: we actually may be able to implement this
                                 bail!("splat in projected recursive table");
@@ -460,8 +481,10 @@ impl QueryBuilder<'_> {
                                         "failed to query source table for splat operator in rule",
                                     );
 
-                                column_projections
-                                    .extend(iter_splat_projection(projection, &source_columns));
+                                column_projections.extend(iter_splat_projection(
+                                    source_projection,
+                                    &source_columns,
+                                ));
                             }
                         }
                         column_projections
@@ -525,12 +548,26 @@ impl QueryBuilder<'_> {
             }
         }
 
-        let projection = columns
+        let projection = rule_projection
+            .columns
             .iter()
-            .map(|column| -> Result<ValueProjection> {
+            // TODO: working around borrow checker :(
+            .cloned()
+            .chain(if rule_projection.has_splat {
+                let all_columns = auto_detect_columns(self.prelude, self.db_conn, clauses);
+                iter_splat_projection(rule_projection, &all_columns).collect()
+            } else {
+                vec![]
+            })
+            // TODO: ColumnProjection meaning is inverted in lhs
+            .map(|ColumnProjection { src, dst }| -> Result<ValueProjection> {
+                if !matches!(dst, ast::Value::Column(x) if src == x) {
+                    todo!("projection in rule lhs");
+                }
+
                 let column = column_map
-                    .get(column)
-                    .ok_or_else(|| anyhow!("Unknown column {:?}", column))
+                    .get(&src)
+                    .ok_or_else(|| anyhow!("Unknown column {:?}", src))
                     .copied()?;
 
                 Ok(ValueProjection {

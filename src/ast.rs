@@ -25,8 +25,7 @@ pub struct DataEntry {
 
 #[derive(Clone, Debug)]
 pub struct Rule {
-    pub name: RuleName,
-    pub columns: Vec<ColumnName>,
+    pub lhs: SourceClause,
     pub clauses: Vec<Clause>,
 }
 

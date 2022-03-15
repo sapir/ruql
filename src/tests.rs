@@ -150,6 +150,63 @@ fn test_single_external_table_splat_in_rule_rhs() {
 }
 
 #[test]
+fn test_single_data_entry_splat_in_rule_lhs() {
+    let mut prelude = PRELUDE_BAZ_DATA_ENTRY.to_owned();
+    // Invert baz order to check that we're splatting correctly.
+    prelude.push_str("tmp(..) = baz(c, b, a);");
+    test_query(
+        &prelude,
+        // Use splat here, too, because if we specify the column names then we
+        // don't know if the splat added unnecessary columns that we didn't
+        // specify.
+        "tmp(..);",
+        &[
+            &[string("aaa"), int(2), int(1)],
+            &[string("bbb"), int(3), int(1)],
+        ],
+    );
+}
+
+#[test]
+fn test_single_subquery_splat_in_rule_lhs() {
+    let mut prelude = PRELUDE_BAZ_DATA_ENTRY.to_owned();
+    prelude.push_str(
+        // See comment in test_single_data_entry_splat_in_rule_lhs about column
+        // order inversion.
+        "tmp(a, b, c) = baz(a, b, c);
+        tmp2(..) = tmp(c, b, a);",
+    );
+    test_query(
+        &prelude,
+        // See comment in test_single_data_entry_splat_in_rule_lhs about why we
+        // use the splat operator here.
+        "tmp2(..);",
+        &[
+            &[string("aaa"), int(2), int(1)],
+            &[string("bbb"), int(3), int(1)],
+        ],
+    );
+}
+
+#[test]
+fn test_single_external_table_splat_in_rule_lhs() {
+    test_query(
+        // See comment in test_single_data_entry_splat_in_rule_lhs about column
+        // order inversion.
+        "tmp(..) = foo(c, b, a);",
+        // See comment in test_single_data_entry_splat_in_rule_lhs about why we
+        // use the splat operator here.
+        "tmp(..);",
+        &[
+            &[string("first"), int(2), int(1)],
+            &[string("second"), int(3), int(1)],
+            &[string("third"), int(4), int(2)],
+            &[string("fourth"), int(5), int(2)],
+        ],
+    );
+}
+
+#[test]
 fn test_single_data_entry_splat_in_query_rhs() {
     test_query(
         PRELUDE_BAZ_DATA_ENTRY,
