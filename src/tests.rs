@@ -276,3 +276,13 @@ fn test_recursive_with_inverse_statement_order() {
         &[&[int(1)], &[int(2)], &[int(3)], &[int(4)], &[int(5)]],
     );
 }
+
+#[test]
+fn test_group_by() {
+    test_query(
+        "",
+        "query { foo(a, b, c) }
+        group_by(a, max_b: max(b));",
+        &[&[int(1), int(3)], &[int(2), int(5)]],
+    );
+}

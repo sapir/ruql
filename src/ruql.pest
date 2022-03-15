@@ -45,6 +45,7 @@ rule_lhs = {
 rule_clauses = { rule_clause ~ ("," ~ rule_clause)* ~ ","? }
 rule_clause = {
     src_clause
+    | query_clause
     | condition_clause
 }
 
@@ -52,6 +53,22 @@ src_clause = { identifier ~ "(" ~ (")" | src_clause_params ~ ")")  }
 src_clause_params = { splat | column_projection ~ ("," ~ column_projection)* ~ ("," ~ splat)? }
 column_projection = { identifier ~ (":" ~ value)? }
 splat = { ".." }
+
+query_clause = {
+    "query"
+    ~ "{" ~ rule_clauses ~ "}"
+    ~ (query_group_by | query_pivot)
+}
+query_group_by = {
+    "group_by" ~ "(" ~ src_clause_params ~ ")"
+}
+query_pivot = {
+    "pivot"
+    ~ "(" ~ value ~ "=>" ~ value ~ ")"
+    ~ "{" ~ pivot_item_list ~ "}"
+}
+pivot_item_list = { pivot_item ~ ("," ~ pivot_item)* ~ ","? }
+pivot_item = { identifier | value ~ "=>" ~ identifier }
 
 value = {
     identifier
